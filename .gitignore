@@ -1,0 +1,23 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# 本地配置与密钥
+.env
+
+# 运行时产物
+logs/
+data/*.duckdb
+data/*.duckdb.wal
+data/*.duckdb.tmp/
+
+# uv 缓存
+.uv-cache/
+
+# 前端
+node_modules/
+web/dist/
