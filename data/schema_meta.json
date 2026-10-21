@@ -1,0 +1,751 @@
+{
+  "database": "电商业务库",
+  "tables": [
+    {
+      "name": "dim_date",
+      "description": "日期维表，一行一天。按日/月/季度/节假日聚合都从这里取。",
+      "grain": "一天一行",
+      "row_count": 730,
+      "columns": [
+        {
+          "name": "date_key",
+          "type": "DATE",
+          "description": "日期主键，例如 2026-09-01"
+        },
+        {
+          "name": "year_num",
+          "type": "INTEGER",
+          "description": "年份"
+        },
+        {
+          "name": "quarter_num",
+          "type": "INTEGER",
+          "description": "季度 1-4"
+        },
+        {
+          "name": "month_num",
+          "type": "INTEGER",
+          "description": "月份 1-12"
+        },
+        {
+          "name": "day_num",
+          "type": "INTEGER",
+          "description": "几号 1-31"
+        },
+        {
+          "name": "week_day",
+          "type": "INTEGER",
+          "description": "星期，1=周一 7=周日"
+        },
+        {
+          "name": "is_weekend",
+          "type": "BOOLEAN",
+          "description": "是否周末"
+        },
+        {
+          "name": "is_holiday",
+          "type": "BOOLEAN",
+          "description": "是否法定节假日"
+        },
+        {
+          "name": "holiday_name",
+          "type": "VARCHAR",
+          "description": "节假日名称，非节假日为空",
+          "sample_values": [
+            "劳动节",
+            "元旦",
+            "国庆中秋",
+            "春节",
+            "端午节",
+            "清明节",
+            "中秋节",
+            "国庆节"
+          ]
+        },
+        {
+          "name": "year_month",
+          "type": "VARCHAR",
+          "description": "年月，例如 2026-09，方便按月分组",
+          "sample_values": [
+            "2025-08",
+            "2025-01",
+            "2025-05",
+            "2025-12",
+            "2025-09",
+            "2026-07",
+            "2026-03",
+            "2026-12",
+            "2025-02",
+            "2026-01",
+            "2026-04",
+            "2025-04"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "dim_region",
+      "description": "区域维表：大区-省-市三层，一行一个城市。",
+      "grain": "一个城市一行",
+      "row_count": 35,
+      "columns": [
+        {
+          "name": "region_id",
+          "type": "INTEGER",
+          "description": "区域主键"
+        },
+        {
+          "name": "region_name",
+          "type": "VARCHAR",
+          "description": "大区：华东/华北/华南/华中/西南/东北/西北",
+          "sample_values": [
+            "东北",
+            "华中",
+            "西北",
+            "华东",
+            "西南",
+            "华南",
+            "华北"
+          ]
+        },
+        {
+          "name": "province",
+          "type": "VARCHAR",
+          "description": "省份",
+          "sample_values": [
+            "四川省",
+            "云南省",
+            "辽宁省",
+            "北京市",
+            "新疆",
+            "福建省",
+            "广东省",
+            "广西",
+            "山东省",
+            "重庆市",
+            "江苏省",
+            "天津市"
+          ]
+        },
+        {
+          "name": "city",
+          "type": "VARCHAR",
+          "description": "城市",
+          "sample_values": [
+            "天津",
+            "广州",
+            "南京",
+            "武汉",
+            "西安",
+            "乌鲁木齐",
+            "宁波",
+            "青岛",
+            "南宁",
+            "南昌",
+            "成都",
+            "贵阳"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "dim_customer",
+      "description": "客户维表：注册信息、会员等级、所在城市。",
+      "grain": "一个客户一行",
+      "row_count": 3000,
+      "columns": [
+        {
+          "name": "customer_id",
+          "type": "INTEGER",
+          "description": "客户主键"
+        },
+        {
+          "name": "customer_name",
+          "type": "VARCHAR",
+          "description": "客户姓名（存在重名）"
+        },
+        {
+          "name": "gender",
+          "type": "VARCHAR",
+          "description": "性别：男/女",
+          "sample_values": [
+            "男",
+            "女"
+          ]
+        },
+        {
+          "name": "age",
+          "type": "INTEGER",
+          "description": "年龄"
+        },
+        {
+          "name": "register_date",
+          "type": "DATE",
+          "description": "注册日期"
+        },
+        {
+          "name": "city",
+          "type": "VARCHAR",
+          "description": "所在城市",
+          "sample_values": [
+            "乌鲁木齐",
+            "武汉",
+            "南京",
+            "西安",
+            "广州",
+            "天津",
+            "郑州",
+            "哈尔滨",
+            "兰州",
+            "上海",
+            "重庆",
+            "合肥"
+          ]
+        },
+        {
+          "name": "region_id",
+          "type": "INTEGER",
+          "description": "所在城市对应的区域 ID"
+        },
+        {
+          "name": "member_level",
+          "type": "VARCHAR",
+          "description": "会员等级：普通/银卡/金卡/钻石",
+          "sample_values": [
+            "金卡",
+            "普通",
+            "银卡",
+            "钻石"
+          ]
+        },
+        {
+          "name": "is_active",
+          "type": "BOOLEAN",
+          "description": "是否活跃"
+        }
+      ]
+    },
+    {
+      "name": "dim_category",
+      "description": "商品品类维表，两级结构：parent_id 为空表示一级品类。",
+      "grain": "一个品类一行",
+      "row_count": 24,
+      "columns": [
+        {
+          "name": "category_id",
+          "type": "INTEGER",
+          "description": "品类主键"
+        },
+        {
+          "name": "category_name",
+          "type": "VARCHAR",
+          "description": "品类名称",
+          "sample_values": [
+            "洗护",
+            "粮油调味",
+            "咖啡冲调",
+            "纸尿裤",
+            "数码",
+            "家居",
+            "食品",
+            "母婴",
+            "智能穿戴",
+            "美妆",
+            "电脑办公",
+            "服饰"
+          ]
+        },
+        {
+          "name": "parent_id",
+          "type": "INTEGER",
+          "description": "父品类 ID，一级品类为空"
+        },
+        {
+          "name": "level",
+          "type": "INTEGER",
+          "description": "层级：1=一级 2=二级"
+        }
+      ]
+    },
+    {
+      "name": "dim_product",
+      "description": "商品维表：价格、成本、所属品类、上下架状态。",
+      "grain": "一个 SKU 一行",
+      "row_count": 500,
+      "columns": [
+        {
+          "name": "product_id",
+          "type": "INTEGER",
+          "description": "商品主键"
+        },
+        {
+          "name": "product_name",
+          "type": "VARCHAR",
+          "description": "商品名称"
+        },
+        {
+          "name": "category_id",
+          "type": "INTEGER",
+          "description": "所属二级品类 ID"
+        },
+        {
+          "name": "brand",
+          "type": "VARCHAR",
+          "description": "品牌",
+          "sample_values": [
+            "拾光",
+            "云栖",
+            "初见",
+            "星辰",
+            "乐活",
+            "木白",
+            "简物",
+            "南风",
+            "青禾",
+            "山海"
+          ]
+        },
+        {
+          "name": "price",
+          "type": "DECIMAL(12,2)",
+          "description": "标价（元）"
+        },
+        {
+          "name": "cost",
+          "type": "DECIMAL(12,2)",
+          "description": "成本（元）"
+        },
+        {
+          "name": "launch_date",
+          "type": "DATE",
+          "description": "上架日期"
+        },
+        {
+          "name": "status",
+          "type": "VARCHAR",
+          "description": "状态：on_sale 在售 / off_shelf 已下架",
+          "sample_values": [
+            "off_shelf",
+            "on_sale"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "dim_channel",
+      "description": "销售渠道维表：线上渠道与线下门店。",
+      "grain": "一个渠道一行",
+      "row_count": 5,
+      "columns": [
+        {
+          "name": "channel_id",
+          "type": "INTEGER",
+          "description": "渠道主键"
+        },
+        {
+          "name": "channel_name",
+          "type": "VARCHAR",
+          "description": "渠道名称",
+          "sample_values": [
+            "小程序",
+            "APP",
+            "天猫",
+            "线下门店",
+            "京东"
+          ]
+        },
+        {
+          "name": "channel_type",
+          "type": "VARCHAR",
+          "description": "渠道类型：线上/线下",
+          "sample_values": [
+            "线上",
+            "线下"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "dim_campaign",
+      "description": "营销活动维表：活动时间窗、类型、预算。",
+      "grain": "一个活动一行",
+      "row_count": 14,
+      "columns": [
+        {
+          "name": "campaign_id",
+          "type": "INTEGER",
+          "description": "活动主键"
+        },
+        {
+          "name": "campaign_name",
+          "type": "VARCHAR",
+          "description": "活动名称",
+          "sample_values": [
+            "2025双11",
+            "2025双12",
+            "2025暑期档",
+            "2026年货节",
+            "2025黑五",
+            "2026暑期档",
+            "2025 618大促",
+            "2026 38节",
+            "2025春季上新",
+            "2026 99划算节",
+            "直播间专场",
+            "2026 618大促"
+          ]
+        },
+        {
+          "name": "campaign_type",
+          "type": "VARCHAR",
+          "description": "活动类型：满减/折扣/直播/新品",
+          "sample_values": [
+            "直播",
+            "新品",
+            "满减",
+            "折扣"
+          ]
+        },
+        {
+          "name": "start_date",
+          "type": "DATE",
+          "description": "活动开始日期"
+        },
+        {
+          "name": "end_date",
+          "type": "DATE",
+          "description": "活动结束日期"
+        },
+        {
+          "name": "budget",
+          "type": "DECIMAL(12,2)",
+          "description": "活动预算（元）"
+        }
+      ]
+    },
+    {
+      "name": "fact_order",
+      "description": "订单主表：一行一个订单，金额是订单级汇总。",
+      "grain": "一个订单一行",
+      "row_count": 30000,
+      "columns": [
+        {
+          "name": "order_id",
+          "type": "BIGINT",
+          "description": "订单主键"
+        },
+        {
+          "name": "customer_id",
+          "type": "INTEGER",
+          "description": "下单客户 ID"
+        },
+        {
+          "name": "region_id",
+          "type": "INTEGER",
+          "description": "收货区域 ID（可能不等于客户所在城市）"
+        },
+        {
+          "name": "channel_id",
+          "type": "INTEGER",
+          "description": "下单渠道 ID"
+        },
+        {
+          "name": "campaign_id",
+          "type": "INTEGER",
+          "description": "参与的活动 ID，未参与为空"
+        },
+        {
+          "name": "order_date",
+          "type": "DATE",
+          "description": "下单日期"
+        },
+        {
+          "name": "order_status",
+          "type": "VARCHAR",
+          "description": "订单状态：paid 已支付 / shipped 已发货 / completed 已完成 / refunded 已退款 / cancelled 已取消",
+          "sample_values": [
+            "paid",
+            "cancelled",
+            "refunded",
+            "shipped",
+            "completed"
+          ]
+        },
+        {
+          "name": "total_amount",
+          "type": "DECIMAL(12,2)",
+          "description": "订单实付金额 = 商品金额 - 优惠 + 运费"
+        },
+        {
+          "name": "discount_amount",
+          "type": "DECIMAL(12,2)",
+          "description": "优惠金额"
+        },
+        {
+          "name": "shipping_fee",
+          "type": "DECIMAL(12,2)",
+          "description": "运费"
+        },
+        {
+          "name": "created_at",
+          "type": "TIMESTAMP",
+          "description": "下单时间（含时分秒）"
+        }
+      ]
+    },
+    {
+      "name": "fact_order_item",
+      "description": "订单明细表：一行一个商品，一个订单可能有多行。",
+      "grain": "订单 × 商品一行",
+      "row_count": 52600,
+      "columns": [
+        {
+          "name": "item_id",
+          "type": "BIGINT",
+          "description": "明细主键"
+        },
+        {
+          "name": "order_id",
+          "type": "BIGINT",
+          "description": "所属订单 ID"
+        },
+        {
+          "name": "product_id",
+          "type": "INTEGER",
+          "description": "商品 ID"
+        },
+        {
+          "name": "quantity",
+          "type": "INTEGER",
+          "description": "购买数量"
+        },
+        {
+          "name": "unit_price",
+          "type": "DECIMAL(12,2)",
+          "description": "成交单价"
+        },
+        {
+          "name": "item_amount",
+          "type": "DECIMAL(12,2)",
+          "description": "行金额 = 数量 × 单价"
+        }
+      ]
+    },
+    {
+      "name": "fact_payment",
+      "description": "支付流水表：一个订单可能有一笔成功支付；取消订单没有支付记录。",
+      "grain": "一笔支付一行",
+      "row_count": 27925,
+      "columns": [
+        {
+          "name": "payment_id",
+          "type": "BIGINT",
+          "description": "支付流水主键"
+        },
+        {
+          "name": "order_id",
+          "type": "BIGINT",
+          "description": "订单 ID"
+        },
+        {
+          "name": "payment_method",
+          "type": "VARCHAR",
+          "description": "支付方式：支付宝/微信/银行卡/其他",
+          "sample_values": [
+            "微信",
+            "银行卡",
+            "支付宝",
+            "其他"
+          ]
+        },
+        {
+          "name": "paid_amount",
+          "type": "DECIMAL(12,2)",
+          "description": "实付金额"
+        },
+        {
+          "name": "paid_at",
+          "type": "TIMESTAMP",
+          "description": "支付时间（可能晚于下单日期）"
+        },
+        {
+          "name": "payment_status",
+          "type": "VARCHAR",
+          "description": "支付状态",
+          "sample_values": [
+            "success"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "fact_refund",
+      "description": "退款表：整单退款与部分退款都在这里。",
+      "grain": "一笔退款一行",
+      "row_count": 3045,
+      "columns": [
+        {
+          "name": "refund_id",
+          "type": "BIGINT",
+          "description": "退款主键"
+        },
+        {
+          "name": "order_id",
+          "type": "BIGINT",
+          "description": "订单 ID"
+        },
+        {
+          "name": "refund_amount",
+          "type": "DECIMAL(12,2)",
+          "description": "退款金额（可能小于订单金额）"
+        },
+        {
+          "name": "refund_reason",
+          "type": "VARCHAR",
+          "description": "退款原因",
+          "sample_values": [
+            "不喜欢",
+            "物流破损",
+            "发错货",
+            "价格保护",
+            "质量问题",
+            "七天无理由"
+          ]
+        },
+        {
+          "name": "refund_status",
+          "type": "VARCHAR",
+          "description": "退款状态：completed/pending/rejected",
+          "sample_values": [
+            "pending",
+            "completed",
+            "rejected"
+          ]
+        },
+        {
+          "name": "requested_at",
+          "type": "TIMESTAMP",
+          "description": "申请时间"
+        },
+        {
+          "name": "completed_at",
+          "type": "TIMESTAMP",
+          "description": "完成时间，未完成则为空"
+        }
+      ]
+    },
+    {
+      "name": "fact_inventory_snapshot",
+      "description": "库存快照表：每个商品每天一行，记录当日库存。",
+      "grain": "商品 × 日期一行",
+      "row_count": 45000,
+      "columns": [
+        {
+          "name": "snapshot_date",
+          "type": "DATE",
+          "description": "快照日期"
+        },
+        {
+          "name": "product_id",
+          "type": "INTEGER",
+          "description": "商品 ID"
+        },
+        {
+          "name": "stock_qty",
+          "type": "INTEGER",
+          "description": "当日库存数量"
+        },
+        {
+          "name": "in_transit_qty",
+          "type": "INTEGER",
+          "description": "在途库存"
+        },
+        {
+          "name": "safety_stock",
+          "type": "INTEGER",
+          "description": "安全库存阈值"
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "from_table": "fact_order",
+      "from_column": "customer_id",
+      "to_table": "dim_customer",
+      "to_column": "customer_id"
+    },
+    {
+      "from_table": "fact_order",
+      "from_column": "region_id",
+      "to_table": "dim_region",
+      "to_column": "region_id"
+    },
+    {
+      "from_table": "fact_order",
+      "from_column": "channel_id",
+      "to_table": "dim_channel",
+      "to_column": "channel_id"
+    },
+    {
+      "from_table": "fact_order",
+      "from_column": "campaign_id",
+      "to_table": "dim_campaign",
+      "to_column": "campaign_id"
+    },
+    {
+      "from_table": "fact_order",
+      "from_column": "order_date",
+      "to_table": "dim_date",
+      "to_column": "date_key"
+    },
+    {
+      "from_table": "fact_order_item",
+      "from_column": "order_id",
+      "to_table": "fact_order",
+      "to_column": "order_id"
+    },
+    {
+      "from_table": "fact_order_item",
+      "from_column": "product_id",
+      "to_table": "dim_product",
+      "to_column": "product_id"
+    },
+    {
+      "from_table": "fact_payment",
+      "from_column": "order_id",
+      "to_table": "fact_order",
+      "to_column": "order_id"
+    },
+    {
+      "from_table": "fact_refund",
+      "from_column": "order_id",
+      "to_table": "fact_order",
+      "to_column": "order_id"
+    },
+    {
+      "from_table": "dim_product",
+      "from_column": "category_id",
+      "to_table": "dim_category",
+      "to_column": "category_id"
+    },
+    {
+      "from_table": "dim_customer",
+      "from_column": "region_id",
+      "to_table": "dim_region",
+      "to_column": "region_id"
+    },
+    {
+      "from_table": "fact_inventory_snapshot",
+      "from_column": "product_id",
+      "to_table": "dim_product",
+      "to_column": "product_id"
+    },
+    {
+      "from_table": "fact_inventory_snapshot",
+      "from_column": "snapshot_date",
+      "to_table": "dim_date",
+      "to_column": "date_key"
+    }
+  ]
+}
