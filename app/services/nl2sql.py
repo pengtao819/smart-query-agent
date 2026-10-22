@@ -16,6 +16,7 @@ import re
 from pathlib import Path
 
 from app.core.llm import chat_json
+from app.services.semantic_layer import render_semantic_context
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 SCHEMA_META_PATH = ROOT / "data" / "schema_meta.json"
@@ -30,6 +31,8 @@ SYSTEM_PROMPT = """你是资深数据分析师，负责把中文业务问题翻�
 5. 金额类指标用 SUM/AVG 汇总后用 ROUND(x, 2) 保留两位小数。
 6. 给结果起中文列别名，方便业务方阅读。
 7. 如果问题缺少关键信息（比如没说时间范围、指标定义有歧义），把 sql 设为空字符串，在 reason 里说明缺什么、建议怎么问。
+8. 如果提供了【业务口径】，它是唯一权威定义，必须严格遵守；与你的直觉或常识冲突时，以口径为准。
+9. 只输出问题所问的列，不要把中间过程列（如分项金额、退款额）一起 SELECT 出来。问题问一个数就返回一个数。
 
 输出格式（严格 JSON）：
 {"sql": "单条 SQL 或空字符串", "reason": "一句话说明思路或为什么需要澄清"}"""
@@ -89,16 +92,25 @@ def clean_sql(text: str) -> str:
     return text.split(";")[0].strip()
 
 
-def build_user_prompt(question: str, schema_text: str) -> str:
-    return f"{schema_text}\n\n{ENUMS_TEXT}\n\n【业务问题】\n{question}\n\n请输出 JSON。"
+def build_user_prompt(question: str, schema_text: str, semantic_text: str = "") -> str:
+    blocks = []
+    if semantic_text:
+        blocks.append(semantic_text)  # 口径放最前面，权重更高
+    blocks.append(schema_text)
+    blocks.append(ENUMS_TEXT)
+    blocks.append(f"【业务问题】\n{question}\n\n请输出 JSON。")
+    return "\n\n".join(blocks)
 
 
-def generate_sql(question: str, *, model: str | None = None) -> dict:
-    """问题 → SQL。返回解析后的结果 + 成本信息。"""
+def generate_sql(question: str, *, model: str | None = None, use_semantics: bool = True) -> dict:
+    """问题 → SQL。use_semantics=False 时退回 baseline 行为，用于 A/B 对比。"""
     schema_text = render_schema_text()
+    semantic_text, semantic_info = (
+        render_semantic_context(question) if use_semantics else ("", {})
+    )
     result = chat_json(
         SYSTEM_PROMPT,
-        build_user_prompt(question, schema_text),
+        build_user_prompt(question, schema_text, semantic_text),
         model=model,
         max_tokens=1500,
         temperature=0.0,
@@ -114,4 +126,6 @@ def generate_sql(question: str, *, model: str | None = None) -> dict:
         "completion_tokens": result.completion_tokens,
         "latency_ms": result.latency_ms,
         "schema_chars": len(schema_text),
+        "semantic_chars": len(semantic_text),
+        "semantics": semantic_info,
     }

@@ -14,8 +14,10 @@ version: 1
 rules:
   - name: 有效订单
     text: >-
-      有效订单 = fact_order.order_status IN ('paid','shipped','completed','refunded')。
-      取消订单(cancelled)不计入任何成交类指标。
+      有效订单 = fact_order.order_status IN ('paid','shipped','completed','refunded')，
+      取消订单(cancelled)不计入。该口径只适用于成交类指标（GMV、有效订单数、客单价、复购率等）。
+      若问题衡量的是下单行为或结构占比（如下单总量、周末下单占比、活动参与率），
+      应统计全部订单（含 cancelled），不要套用有效订单过滤。
   - name: 默认时间范围
     text: >-
       问题未指定时间时，按最近一个完整自然月统计，并在回答中注明所用时间范围，不要静默假设。
@@ -75,12 +77,15 @@ metrics:
     note: 退款按"退款完成时间"计入对应期间，不追溯调整原订单所在期间。
 
   - name: 有效订单数
-    aliases: [订单数, 订单量, 单量, 成交单数, 多少单, 几单]
+    aliases: [订单数, 订单量, 单量, 成交单数, 多少单, 几单, 已支付订单, 支付订单]
     unit: 单
     tables: [fact_order]
     expression: COUNT(*)
     filters: fact_order.order_status IN ('paid','shipped','completed','refunded')
-    note: 只统计有效订单。若要含取消订单，请明确说"全部订单数"。
+    note: >-
+      只统计有效订单。问题说"已支付订单"时也按本口径
+      （paid/shipped/completed/refunded），不是仅 status = 'paid'。
+      若要含取消订单，请明确说"全部订单数"。
 
   - name: 全部订单数
     aliases: [全部订单, 下单量, 下单数, 订单总数, 所有订单]
@@ -147,6 +152,27 @@ metrics:
     note: >-
       一级品类需从二级上卷：dim_category.parent_id 指向一级品类的 category_id。
       不要直接用 product.category_id 当一级品类。
+
+  - name: 优惠总额
+    aliases: [优惠总额, 优惠金额, 折扣总额, 折扣金额, 优惠, 补贴]
+    unit: 元
+    tables: [fact_order]
+    expression: SUM(fact_order.discount_amount)
+    filters: 不过滤订单状态（取消订单在下单时也已享受优惠）
+    note: >-
+      优惠总额衡量营销让利，口径上包含所有下单（含取消、含退款订单）；
+      不要套用"有效订单"规则，否则会少算取消订单的优惠。
+
+  - name: 退款金额
+    aliases: [退款金额, 退款额, 退款总额, 退了多少钱]
+    unit: 元
+    tables: [fact_refund]
+    expression: SUM(fact_refund.refund_amount)
+    time_field: fact_refund.requested_at
+    filters: 问题未限定状态时统计全部退款记录
+    note: >-
+      按退款申请时间 requested_at 过滤，不要用订单下单日期 order_date，
+      否则跨月退款会被算进错误的月份。若明确问"已完成退款"才加 refund_status = 'completed'。
 
 # ============================================================
 # 维度口径

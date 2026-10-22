@@ -43,8 +43,13 @@ def main() -> None:
     parser.add_argument("--ids", type=str, default="", help="指定题号，如 1,9,21")
     parser.add_argument("--model", type=str, default=None, help="覆盖模型名")
     parser.add_argument("--sleep", type=float, default=0.5, help="每题间隔秒数")
-    parser.add_argument("--output", type=str, default="results/baseline_report.json")
+    parser.add_argument("--no-semantics", action="store_true", help="关闭语义层，用于 A/B 对比")
+    parser.add_argument("--output", type=str, default="", help="报告路径，默认按变体命名")
     args = parser.parse_args()
+
+    use_semantics = not args.no_semantics
+    variant = "semantics" if use_semantics else "baseline"
+    output_path = args.output or f"results/{variant}_report.json"
 
     questions = [q for q in load_questions() if q.get("gold_sql")]
     if args.ids:
@@ -55,7 +60,7 @@ def main() -> None:
     if not questions:
         sys.exit("没有可评测的题目")
 
-    print(f"共 {len(questions)} 题待评测\n")
+    print(f"共 {len(questions)} 题待评测（变体：{variant}）\n")
 
     # 先算一次 gold 结果，避免每题重复执行
     gold_rows: dict[int, list[tuple]] = {}
@@ -73,7 +78,9 @@ def main() -> None:
             "gold_sql": q["gold_sql"],
         }
         try:
-            gen = generate_sql(q["question"], model=args.model)
+            gen = generate_sql(
+                q["question"], model=args.model, use_semantics=use_semantics
+            )
         except Exception as exc:  # noqa: BLE001
             detail.update({"status": "llm_error", "error": f"{type(exc).__name__}: {exc}"})
             details.append(detail)
@@ -89,6 +96,7 @@ def main() -> None:
                 "completion_tokens": gen["completion_tokens"],
                 "latency_ms": gen["latency_ms"],
                 "model": gen["model"],
+                "semantics": gen.get("semantics", {}),
             }
         )
 
@@ -134,6 +142,7 @@ def main() -> None:
         agg["correct"] += 1 if d["status"] == "correct" else 0
 
     report = {
+        "variant": variant,
         "model": details[0].get("model", "") if details else "",
         "enable_thinking": False,
         "total": total,
@@ -153,7 +162,7 @@ def main() -> None:
     }
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = ROOT / args.output
+    out_path = ROOT / output_path
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
