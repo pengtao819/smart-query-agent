@@ -44,7 +44,7 @@
 | 模型选型对比 | 已完成 | 内置多模型速度/准确率对比脚本 |
 | Schema 链接 | 开发中 | 按问题筛选相关表与列 |
 | 指标语义层 | 开发中 | GMV、客单价等口径的显式定义 |
-| AST 安全护栏 | 开发中 | 单语句、类型白名单、函数黑名单已实现；表白名单与强制 LIMIT 进行中 |
+| AST 安全护栏 | 开发中 | 单语句、类型/函数/表/schema 白名单已实现；强制 LIMIT 与超时中断进行中 |
 | 执行反馈自修复 | 计划中 | 将数据库报错回灌模型，最多重试 2 轮 |
 | 澄清与拒答 | 计划中 | 信息不足时反问而非猜测 |
 | 图表与结论 | 计划中 | 依据结果形态选择图表并生成摘要 |
@@ -241,11 +241,13 @@ app/
   core/        config.py 配置管理、llm.py 模型客户端
   db/          executor.py 只读执行器
   schemas/     Pydantic 数据模型（计划中）
-  services/    nl2sql.py SQL 生成服务
+  services/    nl2sql.py SQL 生成、semantic_layer.py 指标语义层、guard.py 安全护栏
 data/
   analytics.duckdb      业务数据库（不纳入版本控制）
   schema_meta.json      表、列、外键元数据
-  eval/questions.jsonl  评测集
+  semantic_layer.yml    指标口径定义（12 指标 / 8 规则 / 6 维度）
+  eval/questions.jsonl  评测集（26 题）
+  eval/holdout.jsonl    留出集（30 题，不参与调优）
 docs/
   schema.md             数据字典（自动生成）
 scripts/
@@ -253,6 +255,8 @@ scripts/
   query.py          命令行查询工具
   eval.py           评测脚本（自检 + 结果集比对）
   run_baseline.py   baseline 评测
+  show_semantics.py 查看某问题命中了哪些指标
+  check_guard.py    护栏攻击样本自检
   bench_models.py   模型选型对比
   check_llm.py      模型服务连通性检查
 results/              评测报告（不纳入版本控制）

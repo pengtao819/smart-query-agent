@@ -14,7 +14,10 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 import sqlglot
@@ -23,8 +26,30 @@ from sqlglot.errors import ParseError, TokenError
 
 DIALECT = "duckdb"
 
+ROOT = Path(__file__).resolve().parents[2]
+SCHEMA_META_PATH = ROOT / "data" / "schema_meta.json"
+
 # 只允许查询类顶层语句。WITH ... SELECT 解析后仍然是 Select，所以自动放行。
 ALLOWED_TYPES = (exp.Select, exp.Union, exp.Intersect, exp.Except)
+
+# 允许作为"表来源"的函数：只读、无副作用，日期序列等场景常用。
+ALLOWED_TABLE_FUNCTIONS = {"generate_series", "range", "unnest"}
+
+# 允许的库/schema 前缀（DuckDB 默认库是 main）
+ALLOWED_SCHEMAS = {"", "main"}
+
+
+@lru_cache
+def allowed_tables() -> frozenset[str]:
+    """从 schema_meta.json 读取合法表名。
+
+    不硬编码的原因：schema 变更时白名单自动跟着变，
+    不会出现"加了表但护栏没更新"的漂移。
+    """
+    if not SCHEMA_META_PATH.exists():
+        return frozenset()
+    meta = json.loads(SCHEMA_META_PATH.read_text(encoding="utf-8"))
+    return frozenset(str(t["name"]).lower() for t in meta.get("tables", []))
 
 # 这些函数能读写本地文件、安装扩展或访问系统，必须禁用。
 # DuckDB 允许 SELECT * FROM read_csv('C:/x.csv')，只读连接拦不住这种"读"。
@@ -128,19 +153,54 @@ def check_sql(sql: str) -> GuardResult:
                 rule="function",
             )
 
-    # FROM 'C:/x.csv' 这类直接把文件当表用的写法
+    # 表来源校验：只允许白名单内的物理表、CTE 别名、放行的表函数
+    cte_names = {str(cte.alias).lower() for cte in stmt.find_all(exp.CTE) if cte.alias}
+    allowed = allowed_tables()
+
     for table in stmt.find_all(exp.Table):
-        if isinstance(table.this, exp.Literal):
+        this = table.this
+
+        # duckdb_settings()、generate_series() 这类表函数
+        if isinstance(this, exp.Func):
+            fname = _func_name(this)
+            if fname in ALLOWED_TABLE_FUNCTIONS:
+                continue
             return GuardResult(
                 False,
-                reason=f"FROM 后直接跟文件路径（{table.this.this}），禁止读取外部文件",
+                reason=f"不允许的表函数 {fname}()",
+                rule="table_function",
+            )
+
+        # 字面量、子查询等在 FROM 位置出现，一律视为可疑来源
+        if not isinstance(this, exp.Identifier):
+            return GuardResult(
+                False,
+                reason=f"不允许的表来源：{table.sql(dialect=DIALECT)}",
+                rule="table_source",
+            )
+
+        name = str(table.name or "").lower()
+        schema = str(table.db or "").lower()
+
+        if _looks_like_path(name):
+            return GuardResult(
+                False,
+                reason=f"表名看起来是文件路径（{name}），禁止读取外部文件",
                 rule="file_source",
             )
-        if _looks_like_path(table.name):
+
+        if schema not in ALLOWED_SCHEMAS:
             return GuardResult(
                 False,
-                reason=f"表名看起来是文件路径（{table.name}），禁止读取外部文件",
-                rule="file_source",
+                reason=f"不允许访问库/系统 schema：{schema}.{name}",
+                rule="schema",
+            )
+
+        if name and name not in allowed and name not in cte_names:
+            return GuardResult(
+                False,
+                reason=f"表 {name} 不在白名单内（合法表：{len(allowed)} 张）",
+                rule="table",
             )
 
     return GuardResult(True, sql=stmt.sql(dialect=DIALECT))

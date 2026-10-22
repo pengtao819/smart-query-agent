@@ -31,12 +31,22 @@ CASES: list[tuple[str, bool, str]] = [
     ("PRAGMA database_list", False, "PRAGMA 读系统信息"),
     ("SELECT 1 UNION SELECT 2; SELECT 3", False, "UNION 后再拼语句"),
     ("", False, "空 SQL"),
+    # ---------- 表白名单（5.2） ----------
+    ("SELECT * FROM duckdb_settings()", False, "表函数读系统配置"),
+    ("SELECT table_name FROM information_schema.tables", False, "information_schema"),
+    ("SELECT * FROM sqlite_master", False, "sqlite 系统表"),
+    ("SELECT * FROM not_a_table", False, "不在白名单的表"),
+    ("SELECT * FROM secret_schema.fact_order", False, "非法 schema 前缀"),
     # ---------- 应该放行 ----------
     ("SELECT COUNT(*) FROM fact_order", True, "普通聚合"),
     ("WITH a AS (SELECT 1 AS x) SELECT * FROM a", True, "CTE"),
     ("SELECT region_id, SUM(total_amount) FROM fact_order GROUP BY 1 ORDER BY 2 DESC", True, "分组排序"),
     ("SELECT * FROM fact_order UNION ALL SELECT * FROM fact_order", True, "UNION ALL"),
     ("SELECT * FROM fact_order WHERE total_amount > 100", True, "带过滤条件"),
+    ("SELECT COUNT(*) FROM main.fact_order", True, "库名 main 前缀"),
+    ("WITH recent AS (SELECT 1 AS x) SELECT * FROM recent", True, "CTE 别名不算未知表"),
+    ("SELECT * FROM generate_series(1, 5)", True, "放行的表函数"),
+    ("SELECT o.order_id, c.customer_id FROM fact_order o JOIN dim_customer c ON c.customer_id = o.customer_id", True, "多表 JOIN"),
 ]
 
 
