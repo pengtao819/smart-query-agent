@@ -23,6 +23,9 @@ data/*.duckdb.tmp/
 node_modules/
 web/dist/
 
+# 个人学习笔记（面试底稿，不进公开仓库）
+docs/面试笔记.md
+
 # IDE
 .idea/
 .vscode/

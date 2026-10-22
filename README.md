@@ -4,7 +4,7 @@
 
 项目聚焦于 Text-to-SQL 在真实业务场景中的工程化问题：Schema 规模、指标口径、SQL 安全性、结果可评测性。
 
-> 状态：SQL 生成、只读执行、评测体系、指标语义层与 AST 安全护栏已完成（调优集 100%，留出集 92%~96%）；API 与前端在路线图中。
+> 状态：语义层、AST 安全护栏与问答主链路已完成（调优集 100%，留出集 92%~96%）；执行反馈自修复、API 与前端在路线图中。
 
 ## 目录
 
@@ -241,7 +241,7 @@ app/
   core/        config.py 配置管理、llm.py 模型客户端
   db/          executor.py 只读执行器
   schemas/     Pydantic 数据模型（计划中）
-  services/    nl2sql.py SQL 生成、semantic_layer.py 指标语义层、guard.py 安全护栏
+  services/    nl2sql.py SQL 生成、semantic_layer.py 语义层、guard.py 护栏、pipeline.py 主链路
 data/
   analytics.duckdb      业务数据库（不纳入版本控制）
   schema_meta.json      表、列、外键元数据
@@ -255,6 +255,7 @@ scripts/
   query.py          命令行查询工具
   eval.py           评测脚本（自检 + 结果集比对）
   run_baseline.py   baseline 评测
+  ask.py            命令行问答（走完整链路）
   show_semantics.py 查看某问题命中了哪些指标
   check_guard.py    护栏攻击样本自检
   bench_models.py   模型选型对比
@@ -275,8 +276,9 @@ web/                  前端（计划中）
 - [ ] 评测集扩充至 150 题
 - [ ] Schema 链接
 - [x] AST 安全护栏（单语句、白名单、强制 LIMIT、超时中断）
+- [x] 问答主链路（生成 → 护栏 → 执行，命令行与评测共用）
 - [ ] 执行反馈自修复
-- [ ] 澄清与拒答能力
+- [x] 澄清与拒答能力（留出集 5/5）
 - [ ] 图表选型与结论生成
 - [ ] FastAPI 接口与前端
 - [ ] 部署与演示

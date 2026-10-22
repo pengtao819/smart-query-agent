@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(SCRIPTS))
 
 from app.db.executor import execute_sql  # noqa: E402
+from app.services.guard import check_sql  # noqa: E402
 from app.services.nl2sql import generate_sql  # noqa: E402
 from eval import load_questions, results_equal  # noqa: E402
 
@@ -107,8 +108,16 @@ def main() -> None:
             detail["status"] = "no_sql"  # 模型认为需要澄清
             print(f"[{i}/{len(questions)}] #{q['id']:<3} 无SQL（{gen['reason'][:40]}）")
         else:
+            guarded = check_sql(gen["sql"])
+            if not guarded.ok:
+                detail["status"] = "blocked"
+                detail["error"] = guarded.reason
+                details.append(detail)
+                print(f"[{i}/{len(questions)}] #{q['id']:<3} 护栏拦截: {guarded.rule}")
+                time.sleep(args.sleep)
+                continue
             try:
-                pred_cols, pred_rows = execute_sql(gen["sql"])
+                pred_cols, pred_rows = execute_sql(guarded.sql)
                 detail["pred_columns"] = pred_cols
                 detail["pred_rows"] = len(pred_rows)
                 detail["pred_first_row"] = [str(c) for c in pred_rows[0]] if pred_rows else []
