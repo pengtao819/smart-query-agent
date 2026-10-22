@@ -4,12 +4,13 @@
 - 正则挡不住等价写法：大小写、注释、换行、子查询、分号拼接
 - AST 能精确判断"这是一条 SELECT"还是"这是一条 DROP"
 
-五道检查（本文件实现前三条，表白名单与 LIMIT 在后续步骤）：
+六道检查（前五条拦截，第六条保护资源）：
 1. 必须能解析
 2. 只能有一条语句
 3. 顶层类型必须是查询类（SELECT / UNION / INTERSECT / EXCEPT）
 4. 禁用读写文件与系统的函数
-5. FROM 后不能直接跟文件路径
+5. 表、表函数、schema 必须在白名单内
+6. 自动补 LIMIT（没有就加，过大就收紧）
 """
 
 from __future__ import annotations
@@ -37,6 +38,10 @@ ALLOWED_TABLE_FUNCTIONS = {"generate_series", "range", "unnest"}
 
 # 允许的库/schema 前缀（DuckDB 默认库是 main）
 ALLOWED_SCHEMAS = {"", "main"}
+
+# 没有 LIMIT 的查询自动补这个行数。问数场景是"看个数/看趋势"，
+# 真要拉大表应该走导出，不该让一次问答把内存打满。
+DEFAULT_ROW_LIMIT = 200
 
 
 @lru_cache
@@ -113,7 +118,22 @@ def _func_name(node: Any) -> str:
     return ""
 
 
-def check_sql(sql: str) -> GuardResult:
+def _limit_rows(stmt: exp.Expression, max_rows: int) -> exp.Expression:
+    """补或收紧 LIMIT：没有就加，比上限大就收紧，本来就小就保留。"""
+    current = stmt.args.get("limit")
+    if current is None:
+        return stmt.limit(max_rows)
+
+    expr = getattr(current, "expression", None)
+    try:
+        value = int(getattr(expr, "this", expr))
+    except (TypeError, ValueError):
+        return stmt.limit(max_rows)
+
+    return stmt.limit(max_rows) if value > max_rows else stmt
+
+
+def check_sql(sql: str, max_rows: int | None = DEFAULT_ROW_LIMIT) -> GuardResult:
     """校验一条 SQL。通过时返回规范化后的 SQL。"""
     raw = (sql or "").strip().rstrip(";").strip()
     if not raw:
@@ -202,5 +222,8 @@ def check_sql(sql: str) -> GuardResult:
                 reason=f"表 {name} 不在白名单内（合法表：{len(allowed)} 张）",
                 rule="table",
             )
+
+    if max_rows is not None:
+        stmt = _limit_rows(stmt, max_rows)
 
     return GuardResult(True, sql=stmt.sql(dialect=DIALECT))
