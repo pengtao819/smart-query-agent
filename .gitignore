@@ -10,6 +10,7 @@ __pycache__/
 .env
 
 # 运行时产物
+results/
 logs/
 data/*.duckdb
 data/*.duckdb.wal
