@@ -1,0 +1,204 @@
+# 指标语义层：业务口径的唯一事实来源
+#
+# 为什么要有这个文件：
+#   模型会写 SQL，但不知道"我们的 GMV 含不含退款单"这类业务约定。
+#   把口径写在这里，一处定义、全局生效；改口径只改这里，然后重跑评测验证影响。
+#
+# 怎么用：app/services/semantic_layer.py 读取它，按问题检索命中指标，注入 prompt。
+
+version: 1
+
+# ============================================================
+# 全局口径规则：所有指标都遵守
+# ============================================================
+rules:
+  - name: 有效订单
+    text: >-
+      有效订单 = fact_order.order_status IN ('paid','shipped','completed','refunded')。
+      取消订单(cancelled)不计入任何成交类指标。
+  - name: 默认时间范围
+    text: >-
+      问题未指定时间时，按最近一个完整自然月统计，并在回答中注明所用时间范围，不要静默假设。
+  - name: 金额精度
+    text: 所有金额汇总后保留两位小数。
+  - name: 金额口径与数量口径
+    text: >-
+      订单级金额用 fact_order.total_amount；商品/品类/品牌维度的销售额用
+      fact_order_item.item_amount（明细级），避免用订单金额按明细重复累加。
+  - name: 区域归属
+    text: >-
+      订单的地区归属用 fact_order.region_id（收货区域）；客户所在地用
+      dim_customer.city / dim_customer.region_id。两者约 15% 不一致：
+      问题问"某地区的订单/销售"按收货区域，"某地区的用户/会员"按客户所在地。
+  - name: 商品上下架
+    text: >-
+      统计历史销量/销售额时不过滤 dim_product.status；
+      只有"在售商品分析"才过滤 status = 'on_sale'。
+  - name: 活动关联
+    text: >-
+      fact_order.campaign_id 约 70% 为 NULL，关联活动必须用 LEFT JOIN，
+      用 INNER JOIN 会丢掉大部分订单。
+  - name: 跨天支付
+    text: >-
+      支付日期与下单日期可能不同（约 1,707 笔）。
+      按"成交"统计用 order_date；按"回款/到账"统计用 fact_payment.paid_at。
+
+# ============================================================
+# 指标定义
+# ============================================================
+metrics:
+  - name: GMV
+    aliases: [GMV, gmv, 成交额, 成交金额, 销售额, 营业额, 营收, 流水, 卖了多少]
+    unit: 元
+    tables: [fact_order]
+    expression: SUM(fact_order.total_amount)
+    filters: fact_order.order_status IN ('paid','shipped','completed','refunded')
+    note: >-
+      支付口径成交总额。包含后续发生退款的订单（退款不冲减 GMV）；不含取消订单。
+      只算 completed 会漏掉约 57%，是常见错误。
+
+  - name: 净GMV
+    aliases: [净GMV, 净成交额, 扣退款后的销售额, 实际收入, 净销售额]
+    depends_on: [GMV]
+    unit: 元
+    tables: [fact_order, fact_refund]
+    expression: GMV 减去同期已完成的退款金额
+    sql_hint: >-
+      SELECT ROUND(
+        (SELECT SUM(total_amount) FROM fact_order
+          WHERE order_status IN ('paid','shipped','completed','refunded')
+            AND order_date >= {start} AND order_date < {end})
+        - COALESCE((SELECT SUM(r.refund_amount) FROM fact_refund r
+            JOIN fact_order o ON o.order_id = r.order_id
+            WHERE r.refund_status = 'completed'
+              AND r.completed_at >= {start} AND r.completed_at < {end}), 0), 2)
+    note: 退款按"退款完成时间"计入对应期间，不追溯调整原订单所在期间。
+
+  - name: 有效订单数
+    aliases: [订单数, 订单量, 单量, 成交单数, 多少单, 几单]
+    unit: 单
+    tables: [fact_order]
+    expression: COUNT(*)
+    filters: fact_order.order_status IN ('paid','shipped','completed','refunded')
+    note: 只统计有效订单。若要含取消订单，请明确说"全部订单数"。
+
+  - name: 全部订单数
+    aliases: [全部订单, 下单量, 下单数, 订单总数, 所有订单]
+    unit: 单
+    tables: [fact_order]
+    expression: COUNT(*)
+    filters: 不过滤状态（含 cancelled）
+    note: 衡量下单行为，不等于成交量。
+
+  - name: 客单价
+    aliases: [客单价, 平均客单价, ARPU, 人均消费, 每用户消费]
+    depends_on: [GMV]
+    unit: 元/人
+    tables: [fact_order]
+    expression: GMV / COUNT(DISTINCT fact_order.customer_id)
+    filters: 同 GMV 口径
+    note: >-
+      分母是去重客户数，不是订单数。若要"平均每单金额"，
+      应改为 GMV / 有效订单数，两者差异明显。
+
+  - name: 复购率
+    aliases: [复购率, 复购, 重复购买率, 回购率]
+    unit: 百分比
+    tables: [fact_order]
+    expression: 期间内有效订单数 >= 2 的客户数 / 期间内有有效订单的客户数
+    sql_hint: >-
+      SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE cnt >= 2) / NULLIF(COUNT(*), 0), 2)
+      FROM (SELECT customer_id, COUNT(*) AS cnt FROM fact_order
+            WHERE order_status IN ('paid','shipped','completed','refunded')
+              AND order_date >= {start} AND order_date < {end}
+            GROUP BY customer_id) t
+    note: 时间窗口由问题决定；未指定时按最近完整自然月。
+
+  - name: 退款率
+    aliases: [退款率, 退货率, 退款占比]
+    depends_on: [GMV]
+    unit: 百分比
+    tables: [fact_order, fact_refund]
+    expression: 已完成退款金额 / GMV
+    note: 金额口径。若要订单口径，用"有退款的订单数 / 有效订单数"。
+
+  - name: 按支付日期的GMV
+    aliases: [回款, 实收, 支付金额, 到账金额, 按支付日期, 按支付时间]
+    unit: 元
+    tables: [fact_payment, fact_order]
+    expression: SUM(fact_payment.paid_amount)
+    filters: fact_payment.payment_status = 'success'
+    time_field: fact_payment.paid_at
+    note: 与 GMV 的差异来自跨天支付与退款时点，两者不应互相替代。
+
+  - name: 取消率
+    aliases: [取消率, 取消订单占比, 退单率]
+    unit: 百分比
+    tables: [fact_order]
+    expression: 取消订单数 / 全部订单数
+    note: 分母为全部下单数（含取消）。
+
+  - name: 品类销售额
+    aliases: [品类销售额, 各品类卖了, 类目销售]
+    unit: 元
+    tables: [fact_order_item, fact_order, dim_product, dim_category]
+    expression: SUM(fact_order_item.item_amount)
+    filters: 订单为有效订单；按 dim_category 汇总
+    note: >-
+      一级品类需从二级上卷：dim_category.parent_id 指向一级品类的 category_id。
+      不要直接用 product.category_id 当一级品类。
+
+# ============================================================
+# 维度口径
+# ============================================================
+dimensions:
+  - name: 大区
+    aliases: [大区, 区域, 华东, 华北, 华南, 华中, 西南, 东北, 西北]
+    field: dim_region.region_name
+    join: fact_order.region_id = dim_region.region_id
+    note: 华东/华北等是 region_name（大区），不是 province（省）。
+
+  - name: 渠道
+    aliases: [渠道, 平台, 天猫, 京东, APP, 小程序, 线下门店]
+    field: dim_channel.channel_name
+    join: fact_order.channel_id = dim_channel.channel_id
+
+  - name: 品类
+    aliases: [品类, 类目, 一级品类, 二级品类]
+    field: dim_category.category_name
+    join: 明细 -> dim_product.category_id -> dim_category.category_id
+    note: 一级品类从二级上卷，见"品类销售额"指标。
+
+  - name: 品牌
+    aliases: [品牌, 牌子]
+    field: dim_product.brand
+    join: fact_order_item.product_id = dim_product.product_id
+
+  - name: 商品
+    aliases: [商品, 产品, SKU, 单品]
+    field: dim_product.product_name
+    join: fact_order_item.product_id = dim_product.product_id
+
+  - name: 会员等级
+    aliases: [会员等级, 钻石, 铂金, 黄金, 白银, 会员]
+    field: dim_customer.member_level
+    join: fact_order.customer_id = dim_customer.customer_id
+
+# ============================================================
+# 时间表达
+# ============================================================
+time_expressions:
+  - phrase: 本月
+    text: order_date >= DATE_TRUNC('month', CURRENT_DATE) 且 < 下月一日
+  - phrase: 上月
+    text: order_date 在上一个完整自然月区间内
+  - phrase: 今年 / 去年
+    text: 按自然年，order_date >= DATE '2026-01-01' 且 < DATE '2027-01-01'
+  - phrase: 环比
+    text: 相邻两个自然月对比，公式 (本月 - 上月) / 上月 * 100，保留两位小数
+  - phrase: 同比
+    text: 与去年同期对比，公式 (本期 - 去年同期) / 去年同期 * 100
+  - phrase: 最近N天
+    text: order_date >= CURRENT_DATE - INTERVAL N DAY（含今天）
+  - phrase: 跨天支付
+    text: CAST(paid_at AS DATE) <> order_date 的订单
