@@ -47,7 +47,7 @@
 | AST 安全护栏 | 已完成 | 单语句、类型/函数/表/schema 白名单、强制 LIMIT、超时中断 |
 | 执行反馈自修复 | 已完成 | 将数据库报错回灌模型，最多 2 轮，修复结果重新过护栏 |
 | 澄清与拒答 | 已完成 | 信息不足时反问而非猜测；已接入自动评测（澄清率 / 误澄清率） |
-| 图表与结论 | 计划中 | 依据结果形态选择图表并生成摘要 |
+| 图表与结论 | 已完成 | 规则选图（单值卡/折线/柱状/多系列/散点/表格）+ 模型写 2~3 句结论 |
 | Web 界面 | 计划中 | FastAPI + 前端 |
 
 ## 系统架构
@@ -254,7 +254,7 @@ app/
   core/        config.py 配置管理、llm.py 模型客户端
   db/          executor.py 只读执行器
   schemas/     Pydantic 数据模型（计划中）
-  services/    nl2sql.py SQL 生成、semantic_layer.py 语义层、guard.py 护栏、repair.py 自修复、pipeline.py 主链路
+  services/    nl2sql.py SQL 生成、semantic_layer.py 语义层、guard.py 护栏、repair.py 自修复、chart.py 选图、conclusion.py 结论、pipeline.py 主链路
 data/
   analytics.duckdb      业务数据库（不纳入版本控制）
   schema_meta.json      表、列、外键元数据
@@ -271,6 +271,8 @@ scripts/
   ask.py            命令行问答（走完整链路）
   show_semantics.py 查看某问题命中了哪些指标
   check_guard.py    护栏攻击样本自检
+  check_chart.py    选图规则自检
+  check_repair.py   自修复三场景验证
   bench_models.py   模型选型对比
   check_llm.py      模型服务连通性检查
 results/              评测报告（不纳入版本控制）
@@ -292,7 +294,7 @@ web/                  前端（计划中）
 - [x] 问答主链路（生成 → 护栏 → 执行，命令行与评测共用）
 - [x] 执行反馈自修复（≤2 轮，修复后重新过护栏）
 - [x] 澄清与拒答能力（留出集 5/5）
-- [ ] 图表选型与结论生成
+- [x] 图表选型与结论生成（规则选图 + 模型写结论）
 - [ ] FastAPI 接口与前端
 - [ ] 部署与演示
 

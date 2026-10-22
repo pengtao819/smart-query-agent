@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from app.db.executor import QueryTimeout, execute_sql
+from app.services.chart import select_chart
+from app.services.conclusion import make_conclusion
 from app.services.guard import check_sql
 from app.services.nl2sql import generate_sql
 from app.services.repair import repair_sql
@@ -37,6 +39,8 @@ class Answer:
     guard_rule: str = ""
     metrics: list[str] = field(default_factory=list)
     repairs: list[dict] = field(default_factory=list)  # 每轮修复的尝试记录
+    chart: dict = field(default_factory=dict)          # 图表建议（规则产出）
+    conclusion: str = ""                               # 一句话结论（模型产出）
 
 
 def answer(
@@ -46,6 +50,7 @@ def answer(
     use_semantics: bool = True,
     timeout_ms: int = 5_000,
     max_repairs: int = MAX_REPAIRS,
+    with_conclusion: bool = True,
 ) -> Answer:
     """跑完整链路。不抛异常，所有失败都体现在 status 上。"""
     gen = generate_sql(question, model=model, use_semantics=use_semantics)
@@ -112,4 +117,21 @@ def answer(
         result.columns = columns
         result.rows = rows
         result.status = STATUS_OK
+        result.chart = select_chart(columns, rows).as_dict()
+
+        if with_conclusion:
+            semantic_hint = "【指标口径】" + "、".join(result.metrics) if result.metrics else ""
+            try:
+                concl = make_conclusion(
+                    question,
+                    result.sql,
+                    columns,
+                    rows,
+                    semantic_text=semantic_hint,
+                    model=model,
+                )
+                result.conclusion = concl["text"]
+            except Exception as exc:  # noqa: BLE001 - 结论失败不影响查询结果
+                result.conclusion = f"（结论生成失败：{type(exc).__name__}）"
+
         return result

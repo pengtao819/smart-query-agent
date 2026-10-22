@@ -51,6 +51,13 @@ def main() -> None:
     for row in result.rows[: args.rows]:
         print("  ", tuple(str(c) for c in row))
 
+    if result.chart:
+        chart = result.chart
+        axes = " / ".join(str(x) for x in (chart.get("x"), chart.get("series"), chart.get("y")) if x)
+        print(f"图表建议：{chart['type']}" + (f"（{axes}）" if axes else "") + f" —— {chart['reason']}")
+    if result.conclusion:
+        print(f"结论：{result.conclusion}")
+
 
 if __name__ == "__main__":
     main()
