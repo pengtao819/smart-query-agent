@@ -55,20 +55,27 @@ def main() -> None:
         variant = f"{Path(args.questions).stem}_{variant}"
     output_path = args.output or f"results/{variant}_report.json"
 
-    questions = [q for q in load_questions(Path(args.questions) if args.questions else None) if q.get("gold_sql")]
+    questions = load_questions(Path(args.questions) if args.questions else None)
     if args.ids:
-        wanted = {int(x) for x in args.ids.split(",") if x.strip()}
-        questions = [q for q in questions if q["id"] in wanted]
+        # 题号可能是数字（1,9,21）也可能是字符串（H01），统一按字符串比
+        wanted = {x.strip() for x in args.ids.split(",") if x.strip()}
+        questions = [q for q in questions if str(q["id"]) in wanted]
     if args.limit:
         questions = questions[: args.limit]
     if not questions:
         sys.exit("没有可评测的题目")
 
-    print(f"共 {len(questions)} 题待评测（变体：{variant}）\n")
+    sql_questions = [q for q in questions if q.get("gold_sql")]
+    clarify_questions = [q for q in questions if not q.get("gold_sql")]
+
+    print(
+        f"共 {len(questions)} 题：{len(sql_questions)} 道有标准答案，"
+        f"{len(clarify_questions)} 道应澄清/拒答（变体：{variant}）\n"
+    )
 
     # 先算一次 gold 结果，避免每题重复执行
-    gold_rows: dict[int, list[tuple]] = {}
-    for q in questions:
+    gold_rows: dict[object, list[tuple]] = {}
+    for q in sql_questions:
         _, rows = execute_sql(q["gold_sql"])
         gold_rows[q["id"]] = rows
 
@@ -79,7 +86,8 @@ def main() -> None:
             "id": q["id"],
             "question": q["question"],
             "category": q.get("category", "未分类"),
-            "gold_sql": q["gold_sql"],
+            "kind": "sql" if q.get("gold_sql") else "clarify",
+            "gold_sql": q.get("gold_sql", ""),
         }
         try:
             gen = generate_sql(
@@ -103,6 +111,19 @@ def main() -> None:
                 "semantics": gen.get("semantics", {}),
             }
         )
+
+        # 应澄清/拒答的题：判分标准是"有没有输出 SQL"，不看内容对不对
+        if detail["kind"] == "clarify":
+            if not gen["sql"]:
+                detail["status"] = "clarified"
+                print(f"[{i}/{len(questions)}] #{q['id']:<3} 澄清正确（{gen['reason'][:28]}）")
+            else:
+                detail["status"] = "answered_unexpectedly"
+                print(f"[{i}/{len(questions)}] #{q['id']:<3} 该澄清却直接给了 SQL")
+            detail["total_latency_ms"] = (time.perf_counter() - t0) * 1000
+            details.append(detail)
+            time.sleep(args.sleep)
+            continue
 
         if not gen["sql"]:
             detail["status"] = "no_sql"  # 模型认为需要澄清
@@ -137,17 +158,21 @@ def main() -> None:
         time.sleep(args.sleep)
 
     # ---------- 汇总 ----------
-    total = len(details)
-    counts = {}
+    answered = [d for d in details if d["kind"] == "sql"]
+    clarify = [d for d in details if d["kind"] == "clarify"]
+
+    counts: dict[str, int] = {}
     for d in details:
         counts[d["status"]] = counts.get(d["status"], 0) + 1
 
     correct = counts.get("correct", 0)
     executed = correct + counts.get("wrong_result", 0)  # SQL 能跑通的比例
+    false_clarify = counts.get("no_sql", 0)             # 有答案的题却去反问
+    clarified = counts.get("clarified", 0)              # 该反问的题确实反问了
     latencies = [d["latency_ms"] for d in details if d.get("latency_ms")]
 
     by_category: dict[str, dict] = {}
-    for d in details:
+    for d in answered:  # 分题型只看有标准答案的题，澄清题单列
         cat = d["category"]
         agg = by_category.setdefault(cat, {"total": 0, "correct": 0})
         agg["total"] += 1
@@ -157,9 +182,13 @@ def main() -> None:
         "variant": variant,
         "model": details[0].get("model", "") if details else "",
         "enable_thinking": False,
-        "total": total,
-        "execution_accuracy": round(correct / total, 4) if total else 0,
-        "legal_rate": round(executed / total, 4) if total else 0,
+        "total": len(details),
+        "sql_questions": len(answered),
+        "clarify_questions": len(clarify),
+        "execution_accuracy": round(correct / len(answered), 4) if answered else 0,
+        "legal_rate": round(executed / len(answered), 4) if answered else 0,
+        "clarify_rate": round(clarified / len(clarify), 4) if clarify else None,
+        "false_clarify_rate": round(false_clarify / len(answered), 4) if answered else 0,
         "status_counts": counts,
         "latency_avg_ms": round(sum(latencies) / len(latencies), 1) if latencies else 0,
         "latency_p95_ms": round(percentile(latencies, 95), 1),
@@ -179,10 +208,14 @@ def main() -> None:
     out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
     print("\n" + "=" * 62)
-    print(f"执行准确率：{correct}/{total} = {report['execution_accuracy']:.1%}")
-    print(f"SQL 合法率：{executed}/{total} = {report['legal_rate']:.1%}")
-    print(f"  ├ 无SQL（模型要求澄清）：{counts.get('no_sql', 0)}")
+    print(f"执行准确率：{correct}/{len(answered)} = {report['execution_accuracy']:.1%}")
+    print(f"SQL 合法率：{executed}/{len(answered)} = {report['legal_rate']:.1%}")
+    if clarify:
+        print(f"澄清率：{clarified}/{len(clarify)} = {report['clarify_rate']:.1%}")
+    print(f"误澄清率：{false_clarify}/{len(answered)} = {report['false_clarify_rate']:.1%}")
+    print(f"  ├ 无SQL（有答案的题却反问）：{false_clarify}")
     print(f"  ├ 执行报错：{counts.get('exec_error', 0)}")
+    print(f"  ├ 护栏拦截：{counts.get('blocked', 0)}")
     print(f"  └ 调用失败：{counts.get('llm_error', 0)}")
     print(f"每类：")
     for cat, agg in report["by_category"].items():
@@ -191,11 +224,12 @@ def main() -> None:
     print(f"token：输入 {report['prompt_tokens_total']} / 输出 {report['completion_tokens_total']}")
     print(f"\n报告：{out_path}")
 
-    failed = [d for d in details if d["status"] != "correct"]
+    failed = [d for d in answered if d["status"] != "correct"]
+    failed += [d for d in clarify if d["status"] != "clarified"]
     if failed:
         print("\n失败题目：")
         for d in failed:
-            print(f"  #{d['id']:<3} [{d['category']}] {d['status']:<12} {d['question']}")
+            print(f"  #{d['id']:<3} [{d['category']}] {d['status']:<22} {d['question']}")
 
 
 if __name__ == "__main__":
