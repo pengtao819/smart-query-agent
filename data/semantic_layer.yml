@@ -124,8 +124,13 @@ metrics:
     depends_on: [GMV]
     unit: 百分比
     tables: [fact_order, fact_refund]
-    expression: 已完成退款金额 / GMV
-    note: 金额口径。若要订单口径，用"有退款的订单数 / 有效订单数"。
+    expression: 期间内已完成退款金额 / 同期 GMV × 100
+    note: >-
+      期间归属：退款按 completed_at 归入对应期间，GMV 按 order_date 归入对应期间，
+      不要用订单下单日期去过滤退款。
+      计算时先分别聚合退款额与 GMV 再相除；若 JOIN fact_refund 后直接 SUM 订单金额，
+      一单多笔退款会放大分母，结果偏小。
+      若要订单口径，用"有退款的订单数 / 有效订单数"。
 
   - name: 按支付日期的GMV
     aliases: [回款, 实收, 支付金额, 到账金额, 按支付日期, 按支付时间]

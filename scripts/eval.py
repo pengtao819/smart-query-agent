@@ -78,8 +78,8 @@ def results_equal(gold: list[tuple], pred: list[tuple]) -> bool:
 # ---------------------------------------------------------------------------
 # 自检
 # ---------------------------------------------------------------------------
-def self_check() -> int:
-    questions = load_questions()
+def self_check(path: Path | None = None) -> int:
+    questions = load_questions(path)
     sql_qs = [q for q in questions if q.get("gold_sql")]
     clarify_qs = [q for q in questions if not q.get("gold_sql")]
 
@@ -145,12 +145,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="智能问数 Agent 评测")
     parser.add_argument("--self-check", action="store_true", help="自检所有 gold SQL")
     parser.add_argument("--selftest", action="store_true", help="验证结果集比对逻辑")
+    parser.add_argument("--questions", type=str, default="", help="评测集路径")
     args = parser.parse_args()
+    qpath = Path(args.questions) if args.questions else None
 
     if args.selftest:
         selftest()
     elif args.self_check:
-        sys.exit(self_check())
+        sys.exit(self_check(qpath))
     else:
         parser.print_help()
 

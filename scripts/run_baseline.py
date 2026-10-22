@@ -44,14 +44,17 @@ def main() -> None:
     parser.add_argument("--model", type=str, default=None, help="覆盖模型名")
     parser.add_argument("--sleep", type=float, default=0.5, help="每题间隔秒数")
     parser.add_argument("--no-semantics", action="store_true", help="关闭语义层，用于 A/B 对比")
+    parser.add_argument("--questions", type=str, default="", help="评测集路径，默认 data/eval/questions.jsonl")
     parser.add_argument("--output", type=str, default="", help="报告路径，默认按变体命名")
     args = parser.parse_args()
 
     use_semantics = not args.no_semantics
     variant = "semantics" if use_semantics else "baseline"
+    if args.questions:
+        variant = f"{Path(args.questions).stem}_{variant}"
     output_path = args.output or f"results/{variant}_report.json"
 
-    questions = [q for q in load_questions() if q.get("gold_sql")]
+    questions = [q for q in load_questions(Path(args.questions) if args.questions else None) if q.get("gold_sql")]
     if args.ids:
         wanted = {int(x) for x in args.ids.split(",") if x.strip()}
         questions = [q for q in questions if q["id"] in wanted]
