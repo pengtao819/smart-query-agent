@@ -48,6 +48,7 @@
 | 执行反馈自修复 | 已完成 | 将数据库报错回灌模型，最多 2 轮，修复结果重新过护栏 |
 | 澄清与拒答 | 已完成 | 信息不足时反问而非猜测；已接入自动评测（澄清率 / 误澄清率） |
 | 图表与结论 | 已完成 | 规则选图（单值卡/折线/柱状/多系列/散点/表格）+ 模型写 2~3 句结论 |
+| Web 界面 | 已完成 | FastAPI + 单页前端，ECharts 本地化，可演示澄清/拒绝/正常三类响应 |
 | Web 界面 | 计划中 | FastAPI + 前端 |
 
 ## 系统架构
@@ -100,6 +101,19 @@ uv run python scripts/run_baseline.py
 ```
 
 ## 使用说明
+
+### 启动 Web 服务
+
+```bash
+uv run uvicorn app.api.main:app --host 127.0.0.1 --port 8010
+```
+
+打开 <http://127.0.0.1:8010> 即为问答页面；接口文档在 <http://127.0.0.1:8010/docs>。
+
+- `POST /api/ask`：`{"question": "2026年每个月的GMV走势如何？"}`，返回 SQL、结果集、图表建议、结论
+- `GET /api/health`：健康检查
+
+前端为单页 HTML（`web/index.html`），ECharts 已下载到 `web/vendor/`，**断网也能渲染图表**。
 
 ### 查询数据
 
@@ -250,7 +264,7 @@ uv run python scripts/bench_models.py             # 模型选型对比
 
 ```
 app/
-  api/         HTTP 接口（计划中）
+  api/         main.py HTTP 接口（FastAPI）
   core/        config.py 配置管理、llm.py 模型客户端
   db/          executor.py 只读执行器
   schemas/     Pydantic 数据模型（计划中）
@@ -263,6 +277,9 @@ data/
   eval/holdout.jsonl    留出集（30 题，不参与调优）
 docs/
   schema.md             数据字典（自动生成）
+web/
+  index.html            单页前端（输入、表格、图表、结论）
+  vendor/echarts.min.js 本地 ECharts，离线可渲染
 scripts/
   init_db.py        建库、造数与元数据导出
   query.py          命令行查询工具
@@ -295,7 +312,7 @@ web/                  前端（计划中）
 - [x] 执行反馈自修复（≤2 轮，修复后重新过护栏）
 - [x] 澄清与拒答能力（留出集 5/5）
 - [x] 图表选型与结论生成（规则选图 + 模型写结论）
-- [ ] FastAPI 接口与前端
+- [x] FastAPI 接口与前端
 - [ ] 部署与演示
 
 ## 设计决策

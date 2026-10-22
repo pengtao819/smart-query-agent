@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>智能问数 Agent</title>
+<script src="/static/vendor/echarts.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --text: #1f2328;
+    --muted: #6b7280;
+    --line: #e5e7eb;
+    --accent: #2563eb;
+    --ok: #059669;
+    --warn: #d97706;
+    --danger: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 16px 64px;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; }
+  header h1 { margin: 0 0 6px; font-size: 22px; }
+  header p { margin: 0 0 24px; color: var(--muted); font-size: 13px; }
+
+  .search { display: flex; gap: 10px; }
+  .search input {
+    flex: 1; padding: 13px 16px; font-size: 15px;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--card);
+    outline: none;
+  }
+  .search input:focus { border-color: var(--accent); }
+  .search button {
+    padding: 0 22px; font-size: 15px; border: 0; border-radius: 10px;
+    background: var(--accent); color: #fff; cursor: pointer;
+  }
+  .search button:disabled { opacity: .6; cursor: default; }
+
+  .examples { margin: 12px 0 26px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .examples span {
+    font-size: 12px; color: var(--muted); padding: 4px 10px;
+    background: #eef2ff; border-radius: 999px; cursor: pointer;
+  }
+  .examples span:hover { background: #e0e7ff; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 18px 20px; margin-bottom: 16px;
+  }
+  .card h2 { margin: 0 0 12px; font-size: 14px; color: var(--muted); font-weight: 600; }
+
+  .banner { border-left: 4px solid var(--accent); }
+  .banner.no_sql { border-left-color: var(--warn); }
+  .banner.blocked, .banner.exec_error, .banner.timeout { border-left-color: var(--danger); }
+  .banner .tag { font-weight: 700; margin-right: 8px; }
+  .banner.no_sql .tag { color: var(--warn); }
+  .banner.blocked .tag, .banner.exec_error .tag, .banner.timeout .tag { color: var(--danger); }
+
+  .metrics { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
+  .metric-chip {
+    font-size: 12px; padding: 3px 10px; border-radius: 999px;
+    background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0;
+  }
+  .meta { font-size: 12px; color: var(--muted); margin-top: 10px; }
+
+  #chartBox { width: 100%; height: 340px; }
+  .metric-big { font-size: 44px; font-weight: 700; color: var(--accent); letter-spacing: -1px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; background: #fafafa; position: sticky; top: 0; }
+  .table-scroll { max-height: 360px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+
+  .conclusion { font-size: 15px; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  pre.sql {
+    white-space: pre-wrap; word-break: break-all; font-size: 12.5px;
+    background: #0f172a; color: #e2e8f0; padding: 14px; border-radius: 8px; margin: 10px 0 0;
+  }
+  .loading { color: var(--muted); font-size: 14px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>智能问数 Agent</h1>
+    <p>自然语言 → SQL → 安全校验 → 只读执行 → 图表与结论。所有查询只读，且自动补 LIMIT 200。</p>
+  </header>
+
+  <div class="search">
+    <input id="q" placeholder="用一句话问我，例如：2026 年每个月的 GMV 走势如何？" autocomplete="off" />
+    <button id="go">提问</button>
+  </div>
+
+  <div class="examples" id="examples"></div>
+
+  <div id="loading" class="loading hidden">正在生成 SQL 并执行…（通常 3~6 秒）</div>
+
+  <div id="banner" class="card banner hidden">
+    <span class="tag" id="bannerTag"></span><span id="bannerText"></span>
+  </div>
+
+  <div id="result">
+    <div class="card hidden" id="chartCard">
+      <h2 id="chartTitle">图表</h2>
+      <div id="chartBox"></div>
+      <div class="metric-big hidden" id="metricBox"></div>
+    </div>
+
+    <div class="card hidden" id="conclusionCard">
+      <h2>结论</h2>
+      <div class="conclusion" id="conclusion"></div>
+    </div>
+
+    <div class="card hidden" id="tableCard">
+      <h2 id="tableTitle">明细</h2>
+      <div class="table-scroll"><table id="table"></table></div>
+      <div class="metrics" id="metrics" style="margin-top:12px"></div>
+      <div class="meta" id="meta"></div>
+      <details id="sqlDetails" style="margin-top:12px">
+        <summary>查看生成的 SQL</summary>
+        <pre class="sql" id="sql"></pre>
+      </details>
+    </div>
+  </div>
+</div>
+
+<script>
+const EXAMPLES = [
+  "2026年9月的GMV是多少？",
+  "2026年每个月的GMV走势如何？",
+  "2026年各品类的销售额排名",
+  "2026年每个月各渠道的GMV分别是多少？",
+  "最近生意怎么样？",
+  "把退款记录全部删掉",
+];
+
+const $ = (id) => document.getElementById(id);
+let chart = null;
+
+const banner = (kind, tag, text) => {
+  const el = $("banner");
+  el.className = `card banner ${kind}`;
+  $("bannerTag").textContent = tag;
+  $("bannerText").textContent = text;
+  el.classList.remove("hidden");
+};
+
+const reset = () => {
+  $("banner").classList.add("hidden");
+  ["chartCard", "conclusionCard", "tableCard"].forEach(id => $(id).classList.add("hidden"));
+  $("metrics").innerHTML = "";
+  $("meta").textContent = "";
+};
+
+const fmt = (v) => {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "number") {
+    return Number.isInteger(v) ? v.toLocaleString() : v.toLocaleString(undefined, {maximumFractionDigits: 2});
+  }
+  return String(v);
+};
+
+function renderTable(columns, rows) {
+  const head = "<thead><tr>" + columns.map(c => `<th>${c}</th>`).join("") + "</tr></thead>";
+  const body = "<tbody>" + rows.map(r => "<tr>" + r.map(c => `<td>${fmt(c)}</td>`).join("") + "</tr>").join("") + "</tbody>";
+  $("table").innerHTML = head + body;
+  $("tableTitle").textContent = `明细（${rows.length} 行）`;
+  $("tableCard").classList.remove("hidden");
+}
+
+function renderChart(res) {
+  const spec = res.chart || {};
+  const cols = res.columns || [];
+  const rows = res.rows || [];
+  const idx = (name) => cols.indexOf(name);
+
+  // 单值：大数字卡片
+  if (spec.type === "metric") {
+    $("chartCard").classList.remove("hidden");
+    $("chartTitle").textContent = spec.y || "指标";
+    $("chartBox").classList.add("hidden");
+    $("metricBox").classList.remove("hidden");
+    $("metricBox").textContent = fmt(rows[0][idx(spec.y)]);
+    return;
+  }
+
+  if (!spec.type || spec.type === "table" || rows.length === 0 || typeof echarts === "undefined") return;
+
+  $("chartCard").classList.remove("hidden");
+  $("chartBox").classList.remove("hidden");
+  $("metricBox").classList.add("hidden");
+  $("chartTitle").textContent = `图表 · ${spec.type}`;
+  if (!chart) chart = echarts.init($("chartBox"));
+
+  const xi = idx(spec.x), yi = idx(spec.y);
+  let option;
+
+  if (spec.type === "line" || spec.type === "bar") {
+    option = {
+      grid: { left: 60, right: 24, top: 24, bottom: 50 },
+      tooltip: { trigger: "axis" },
+      xAxis: { type: "category", data: rows.map(r => String(r[xi])), axisLabel: { rotate: rows.length > 8 ? 35 : 0 } },
+      yAxis: { type: "value" },
+      series: [{ type: spec.type, data: rows.map(r => r[yi]), smooth: spec.type === "line", areaStyle: spec.type === "line" ? { opacity: 0.12 } : undefined }],
+    };
+  } else if (spec.type === "multi_line") {
+    const si = idx(spec.series);
+    const xs = [...new Set(rows.map(r => String(r[xi])))];
+    const groups = {};
+    rows.forEach(r => {
+      const key = String(r[si]);
+      (groups[key] = groups[key] || {})[String(r[xi])] = r[yi];
+    });
+    option = {
+      grid: { left: 60, right: 24, top: 40, bottom: 50 },
+      tooltip: { trigger: "axis" },
+      legend: { top: 0 },
+      xAxis: { type: "category", data: xs, axisLabel: { rotate: xs.length > 8 ? 35 : 0 } },
+      yAxis: { type: "value" },
+      series: Object.entries(groups).map(([name, map]) => ({
+        name, type: "line", smooth: true,
+        data: xs.map(x => (x in map ? map[x] : null)),
+      })),
+    };
+  } else if (spec.type === "scatter") {
+    option = {
+      grid: { left: 70, right: 24, top: 24, bottom: 50 },
+      tooltip: {},
+      xAxis: { type: "value", name: spec.x },
+      yAxis: { type: "value", name: spec.y },
+      series: [{ type: "scatter", data: rows.map(r => [r[xi], r[yi]]) }],
+    };
+  }
+  if (option) chart.setOption(option, true);
+}
+
+function render(res) {
+  reset();
+  const status = res.status;
+
+  if (status === "ok") {
+    renderChart(res);
+    if (res.conclusion) {
+      $("conclusionCard").classList.remove("hidden");
+      $("conclusion").textContent = res.conclusion;
+    }
+    renderTable(res.columns || [], res.rows || []);
+    if (res.metrics && res.metrics.length) {
+      $("metrics").innerHTML = res.metrics.map(m => `<span class="metric-chip">命中指标：${m}</span>`).join("");
+    }
+    $("meta").textContent = `耗时 ${(res.elapsed_ms / 1000).toFixed(1)}s · 返回 ${res.row_count} 行`
+      + (res.repair_count ? ` · 自修复 ${res.repair_count} 轮` : "");
+    $("sql").textContent = res.sql || "";
+    return;
+  }
+
+  if (status === "no_sql") {
+    banner("no_sql", "需要澄清", res.message || "问题信息不足，请补充指标或时间范围。");
+    return;
+  }
+  if (status === "blocked") {
+    banner("blocked", "已拒绝", `${res.message}（规则：${res.guard_rule}）`);
+    return;
+  }
+  banner(status, "执行失败", res.message || "未知错误");
+}
+
+async function ask(question) {
+  const q = (question || $("q").value).trim();
+  if (!q) return;
+  $("q").value = q;
+  $("go").disabled = true;
+  $("loading").classList.remove("hidden");
+  reset();
+  try {
+    const resp = await fetch("/api/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: q }),
+    });
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({}));
+      throw new Error(body.detail ? JSON.stringify(body.detail) : `HTTP ${resp.status}`);
+    }
+    render(await resp.json());
+  } catch (err) {
+    banner("exec_error", "请求失败", err.message);
+  } finally {
+    $("loading").classList.add("hidden");
+    $("go").disabled = false;
+  }
+}
+
+$("examples").innerHTML = EXAMPLES.map(e => `<span>${e}</span>`).join("");
+$("examples").addEventListener("click", (e) => {
+  if (e.target.tagName === "SPAN") ask(e.target.textContent);
+});
+$("go").addEventListener("click", () => ask());
+$("q").addEventListener("keydown", (e) => { if (e.key === "Enter") ask(); });
+window.addEventListener("resize", () => { if (chart) chart.resize(); });
+</script>
+</body>
+</html>
