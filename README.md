@@ -45,7 +45,7 @@
 | Schema 链接 | 开发中 | 按问题筛选相关表与列 |
 | 指标语义层 | 开发中 | GMV、客单价等口径的显式定义 |
 | AST 安全护栏 | 已完成 | 单语句、类型/函数/表/schema 白名单、强制 LIMIT、超时中断 |
-| 执行反馈自修复 | 计划中 | 将数据库报错回灌模型，最多重试 2 轮 |
+| 执行反馈自修复 | 已完成 | 将数据库报错回灌模型，最多 2 轮，修复结果重新过护栏 |
 | 澄清与拒答 | 计划中 | 信息不足时反问而非猜测 |
 | 图表与结论 | 计划中 | 依据结果形态选择图表并生成摘要 |
 | Web 界面 | 计划中 | FastAPI + 前端 |
@@ -241,7 +241,7 @@ app/
   core/        config.py 配置管理、llm.py 模型客户端
   db/          executor.py 只读执行器
   schemas/     Pydantic 数据模型（计划中）
-  services/    nl2sql.py SQL 生成、semantic_layer.py 语义层、guard.py 护栏、pipeline.py 主链路
+  services/    nl2sql.py SQL 生成、semantic_layer.py 语义层、guard.py 护栏、repair.py 自修复、pipeline.py 主链路
 data/
   analytics.duckdb      业务数据库（不纳入版本控制）
   schema_meta.json      表、列、外键元数据
@@ -277,7 +277,7 @@ web/                  前端（计划中）
 - [ ] Schema 链接
 - [x] AST 安全护栏（单语句、白名单、强制 LIMIT、超时中断）
 - [x] 问答主链路（生成 → 护栏 → 执行，命令行与评测共用）
-- [ ] 执行反馈自修复
+- [x] 执行反馈自修复（≤2 轮，修复后重新过护栏）
 - [x] 澄清与拒答能力（留出集 5/5）
 - [ ] 图表选型与结论生成
 - [ ] FastAPI 接口与前端
